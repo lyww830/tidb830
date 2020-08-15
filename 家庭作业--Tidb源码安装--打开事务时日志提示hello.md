@@ -1,0 +1,306 @@
+# 家庭作业--Tidb源码安装--打开事时日志务提示hello
+
+## OS环境准备
+
+```shell
+个人虚拟机IP地址：1.1.1.21  ; 
+	      目录：/opt/tidb ；
+          用户：root
+[root@h21 tidb]# cat /etc/system-release
+CentOS Linux release 8.0.1905 (Core) 
+[root@h21 tidb]# uname -a
+Linux h21 4.18.0-80.el8.x86_64 #1 SMP Tue Jun 4 09:19:46 UTC 2019 x86_64 x86_64 x86_64 GNU/Linux
+[root@h21 tidb]# 
+
+yum install gcc-c++ git cmake3 golang -y 
+ln -s /usr/bin/cmake3 /usr/bin/cmake
+```
+
+## 安装rust
+
+```shell
+curl https://sh.rustup.rs -sSf | sh -s
+rustup override set nightly-2020-07-01
+```
+
+## 查看rust
+
+```SHELL
+[root@h21 tikv]# rustup show
+Default host: x86_64-unknown-linux-gnu
+rustup home:  /root/.rustup
+installed toolchains
+--------------------
+stable-x86_64-unknown-linux-gnu
+nightly-2020-07-01-x86_64-unknown-linux-gnu
+active toolchain
+----------------
+nightly-2020-07-01-x86_64-unknown-linux-gnu (directory override for '/opt/tidb/wangwei830/src/github.com/pingcap/tikv')
+rustc 1.46.0-nightly (16957bd4d 2020-06-30)
+
+# 查看tikv用到的rust版本：
+[root@h21 tikv]# cat rust-toolchain 
+nightly-2020-07-01
+[root@h21 tikv]# 
+
+```
+
+##  下载
+
+```shell
+export GOPATH=/opt/tidb/wangwei830
+mkdir -p /opt/tidb/wangwei830
+mkdir -p $GOPATH/src/github.com/pingcap
+cd $GOPATH/src/github.com/pingcap
+git clone https://github.com/pingcap/tidb
+git clone https://github.com/pingcap/pd
+git clone https://github.com/pingcap/tikv
+```
+
+## 编译
+
+```shell
+cd $GOPATH/src/github.com/pingcap
+#编译pg-server：
+cd pd
+gmake
+#编译tidb-server：
+cd ../tidb
+gmake
+#编译tikv-server：
+yum install cargo
+cd ../tikv
+cargo build
+```
+
+## 安装
+
+```shell
+[root@h21 bin]# mkdir /opt/tidb/bin
+cp /opt/tidb/wangwei830/src/github.com/pingcap/pd/bin/pd-server /opt/tidb/bin/
+cp /opt/tidb/wangwei830/src/github.com/pingcap/tidb/bin/tidb-server /opt/tidb/bin/
+cp /opt/tidb/wangwei830/src/github.com/pingcap/tikv/target/debug/tikv-server /opt/tidb/bin/
+cp /opt/tidb/wangwei830/src/github.com/pingcap/tikv/target/debug/tikv-ctl /opt/tidb/bin/
+
+chmod -R 755 /opt/tidb/bin/
+vi ~/.bash_profile 
+. ~/.bash_profile 
+mkdir -p /opt/tidb/data
+```
+
+## 启动服务
+```shell
+cd /opt/tidb/data
+[root@h21 data]# pd-server --data-dir=pd --log-file=pd.log &
+
+tikv-server --pd='127.0.0.1:2379' --data-dir=tikv01 --log-file=tikv1.log &
+tikv-server --pd='127.0.0.1:2379' --data-dir=tikv02 --addr="127.0.0.1:20161" --status-addr="127.0.0.1:20181" --log-file=tikv2.log &
+tikv-server --pd='127.0.0.1:2379' --data-dir=tikv03 --addr="127.0.0.1:20162" --status-addr="127.0.0.1:20182" --log-file=tikv3.log &
+
+tidb-server --store=tikv --path='127.0.0.1:2379' --log-file=tidb.log &
+```
+
+## 查看服务
+
+```shell
+[root@h21 tidb]# ps -ef |grep server|grep -v grep|awk '{print $NF}'
+root       1958   1763  5 14:07 pts/0    00:00:33 pd-server --data-dir=pd --log-file=pd.log
+root       1987   1763  7 14:08 pts/0    00:00:43 tikv-server --pd=127.0.0.1:2379 --data-dir=tikv01 --log-file=tikv1.log
+root       2150   1763  6 14:09 pts/0    00:00:34 tikv-server --pd=127.0.0.1:2379 --data-dir=tikv02 --addr=127.0.0.1:20161 --status-addr=127.0.0.1:20181 --log-file=tikv2.log
+root       2292   1763  6 14:09 pts/0    00:00:33 tikv-server --pd=127.0.0.1:2379 --data-dir=tikv03 --addr=127.0.0.1:20162 --status-addr=127.0.0.1:20182 --log-file=tikv3.log
+root       2547   1763  4 14:16 pts/0    00:00:02 tidb-server --store=tikv --path=127.0.0.1:2379 --log-file=tidb.log
+[root@h21 tidb]# 
+```
+
+## 查看端口
+
+```shell
+[root@h21 ~]# netstat -lntp|grep server|sort
+Active Internet connections (only servers)
+tcp        0      0 127.0.0.1:20180         0.0.0.0:*               LISTEN      1987/tikv-server    
+tcp        0      0 127.0.0.1:20181         0.0.0.0:*               LISTEN      2150/tikv-server    
+tcp        0      0 127.0.0.1:20182         0.0.0.0:*               LISTEN      2292/tikv-server    
+tcp        0      0 127.0.0.1:2379          0.0.0.0:*               LISTEN      1958/pd-server      
+tcp        0      0 127.0.0.1:2380          0.0.0.0:*               LISTEN      1958/pd-server      
+tcp        0      0 127.0.0.1:32931         0.0.0.0:*               LISTEN      1958/pd-server      
+tcp        0      0 127.0.0.1:43419         0.0.0.0:*               LISTEN      1958/pd-server      
+tcp6       0      0 :::10080                :::*                    LISTEN      2547/tidb-server    
+tcp6       0      0 127.0.0.1:20160         :::*                    LISTEN      1987/tikv-server    
+tcp6       0      0 127.0.0.1:20161         :::*                    LISTEN      2150/tikv-server    
+tcp6       0      0 127.0.0.1:20162         :::*                    LISTEN      2292/tikv-server    
+tcp6       0      0 :::4000                 :::*                    LISTEN      2547/tidb-server    
+[root@h21 ~]# 
+```
+
+## 编译安装和启动服务完成，开始测试：
+
+```shell
+[root@h21 ~]# mysql -h 127.0.0.1 -u root -P 4000
+Welcome to the MariaDB monitor.  Commands end with ; or \g.
+Your MySQL connection id is 1
+Server version: 5.7.25-TiDB-v4.0.0-beta.2-948-g148f2d456 TiDB Server (Apache License 2.0) Community Edition, MySQL 5.7 compatible
+
+Copyright (c) 2000, 2018, Oracle, MariaDB Corporation Ab and others.
+
+Type 'help;' or '\h' for help. Type '\c' to clear the current input statement.
+
+MySQL [(none)]> 
+MySQL [(none)]> show databases;
++--------------------+
+| Database           |
++--------------------+
+| INFORMATION_SCHEMA |
+| METRICS_SCHEMA     |
+| PERFORMANCE_SCHEMA |
+| mysql              |
+| test               |
++--------------------+
+5 rows in set (0.001 sec)
+
+MySQL [(none)]> use test;
+Database changed
+```
+
+
+
+## 关闭服务
+
+依次终止tidb-server，tikv-server，tipd-server。
+
+
+
+## 修改源码添加 hello transaction
+
+```go
+// 文件:
+// tidb/sessionctx/context.go
+// tidb/session/session.go
+
+func (s *session) NewTxn(ctx context.Context) error {
+        logutil.BgLogger().Info("Hello Transaction wangwei...")  //打印hello
+        if s.txn.Valid() {
+                txnID := s.txn.StartTS()
+                err := s.CommitTxn(ctx)
+                if err != nil {
+                        return err
+                }
+                vars := s.GetSessionVars()
+                logutil.Logger(ctx).Info("NewTxn() inside a transaction auto commit",
+                        zap.Int64("schemaVersion", vars.TxnCtx.SchemaVersion),
+                        zap.Uint64("txnStartTS", txnID))
+        }
+
+        txn, err := s.store.Begin()
+        if err != nil {
+                return err
+        }
+        txn.SetVars(s.sessionVars.KVVars)
+        if s.GetSessionVars().GetReplicaRead().IsFollowerRead() {
+                txn.SetOption(kv.ReplicaRead, kv.ReplicaReadFollower)
+        }
+        s.txn.changeInvalidToValid(txn)
+        is := domain.GetDomain(s).InfoSchema()
+        s.sessionVars.TxnCtx = &variable.TransactionContext{
+                InfoSchema:    is,
+                SchemaVersion: is.SchemaMetaVersion(),
+                CreateTime:    time.Now(),
+                StartTS:       txn.StartTS(),
+                ShardStep:     int(s.sessionVars.ShardAllocateStep),
+        }
+        return nil
+}
+```
+
+## 重新编译安装tidb
+
+​		略过
+
+## 测试查看hello transaction输出
+
+```mysql
+[root@h21 pingcap]# mysql -h 127.0.0.1 -u root -P 4000
+Welcome to the MariaDB monitor.  Commands end with ; or \g.
+Your MySQL connection id is 5
+Server version: 5.7.25-TiDB-v4.0.0-beta.2-948-g148f2d456-dirty TiDB Server (Apache License 2.0) Community Edition, MySQL 5.7 compatible
+
+Copyright (c) 2000, 2018, Oracle, MariaDB Corporation Ab and others.
+
+Type 'help;' or '\h' for help. Type '\c' to clear the current input statement.
+
+MySQL [(none)]> use test;
+Reading table information for completion of table and column names
+You can turn off this feature to get a quicker startup with -A
+
+Database changed
+MySQL [test]> begin ;
+Query OK, 0 rows affected (0.001 sec)
+
+MySQL [test]> begin ;
+Query OK, 0 rows affected (0.004 sec)
+
+MySQL [test]> commit ;
+Query OK, 0 rows affected (0.001 sec)
+
+MySQL [test]> begin ;
+Query OK, 0 rows affected (0.001 sec)
+
+MySQL [test]> 
+```
+
+```shell
+[2020/08/14 18:09:34.876 +08:00] [INFO] [session.go:1453] ["Hello Transaction wangwei..."]
+[2020/08/14 18:09:37.650 +08:00] [INFO] [session.go:1453] ["Hello Transaction wangwei..."]
+[2020/08/14 18:09:37.834 +08:00] [INFO] [session.go:1453] ["Hello Transaction wangwei..."]
+[2020/08/14 18:09:37.842 +08:00] [INFO] [session.go:1453] ["Hello Transaction wangwei..."]
+[2020/08/14 18:09:37.873 +08:00] [INFO] [session.go:1453] ["Hello Transaction wangwei..."]
+[2020/08/14 18:09:37.888 +08:00] [INFO] [session.go:1453] ["Hello Transaction wangwei..."]
+
+-------------
+[2020/08/14 18:47:09.240 +08:00] [INFO] [session.go:1495] ["Hello Transaction wangwei..."]
+[2020/08/14 18:48:26.878 +08:00] [INFO] [session.go:1495] ["Hello Transaction wangwei..."]
+```
+
+## 后续继续学习:Txn()函数
+
+```GO
+func (s *session) Txn(active bool) (kv.Transaction, error) {
+	if !active {
+		return &s.txn, nil
+	}
+	if !s.txn.validOrPending() {
+		return &s.txn, errors.AddStack(kv.ErrInvalidTxn)
+	}
+	if s.txn.pending() {
+		defer func(begin time.Time) {
+			s.sessionVars.DurationWaitTS = time.Since(begin)
+		}(time.Now())
+		// Transaction is lazy initialized.
+		// PrepareTxnCtx is called to get a tso future, makes s.txn a pending txn,
+		// If Txn() is called later, wait for the future to get a valid txn.
+		if err := s.txn.changePendingToValid(); err != nil {
+			logutil.BgLogger().Error("active transaction fail",
+				zap.Error(err))
+			s.txn.cleanup()
+			s.sessionVars.TxnCtx.StartTS = 0
+			return &s.txn, err
+		}
+		s.sessionVars.TxnCtx.StartTS = s.txn.StartTS()
+		if s.sessionVars.TxnCtx.IsPessimistic {
+			s.txn.SetOption(kv.Pessimistic, true)
+		}
+		if !s.sessionVars.IsAutocommit() {
+			s.sessionVars.SetStatusFlag(mysql.ServerStatusInTrans, true)
+		}
+		s.sessionVars.TxnCtx.CouldRetry = s.isTxnRetryable()
+		if s.sessionVars.GetReplicaRead().IsFollowerRead() {
+			s.txn.SetOption(kv.ReplicaRead, kv.ReplicaReadFollower)
+		}
+	}
+	return &s.txn, nil
+}
+```
+
+
+
+
+
